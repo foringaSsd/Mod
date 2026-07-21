@@ -1,0 +1,345 @@
+# Boss Rush — 5-Boss Fabric 1.20.1 Mod
+
+A Fabric 1.20.1 mod (works on servers and single-player) adding custom
+boss entities:
+
+1. ✅ `bossrush:true_iron_golem` — The True Iron Golem (160 hearts)
+2. ✅ `bossrush:hollow_warden` — The Hollow Warden (140 hearts)
+3. ✅ `bossrush:end_familiar` — End Familiar (15 HP, dragon's helper)
+4. ✅ `bossrush:shulker_sovereign` — The Shulker Sovereign (130 hearts, End City guardian)
+5. ✅ `bossrush:bastion_warlord` — The Bastion Warlord (200 hearts, Nether bastion boss)
+
+Roster complete — all 5 bosses are implemented.
+
+## ⚠️ Important: this code is untested (no compiler available here)
+
+I wrote this against Fabric 1.20.1 + Yarn mappings from memory, in a
+sandbox with no internet access, so I could not run Gradle to compile or
+launch the game and verify it. The logic and structure are solid, but
+expect a handful of small signature mismatches (a renamed method, an
+import that moved) — very normal for hand-written Fabric code and quick
+to fix with an IDE's "Quick Fix" once Yarn sources are attached. Treat
+this as a strong first draft, not a guaranteed drop-in.
+
+## Setup
+
+1. Go to https://fabricmc.net/develop/template/ and generate a fresh
+   Fabric 1.20.1 mod template (or use your existing mod project).
+2. Copy everything from this zip into that project, merging folders:
+   - `src/main/java/com/bossrush/**`
+   - `src/main/resources/fabric.mod.json` (merge/replace)
+   - `src/main/resources/assets/bossrush/**`
+3. Double check `gradle.properties` matches your template's versions —
+   I pinned reasonable versions but the template generator always has the
+   latest correct Yarn/Loader/Fabric API build numbers.
+4. Open in IntelliJ IDEA with the Fabric plugin (or your IDE of choice),
+   let Gradle sync, run `genSources` if you want readable vanilla code to
+   jump into, then run the `runClient` or `runServer` Gradle task.
+
+## What's implemented (Phase-by-phase)
+
+- **Phase 0 – Sleeping**: AI fully disabled (`setAiDisabled(true)` every
+  tick), wakes when a player gets within 8 blocks or lands the first hit.
+- **Phase 1 – Base attacks** (all three run on independent cooldowns,
+  golem picks whichever comes off cooldown and is in range):
+  1. **Reach melee** — normal punch in melee range; if you're on a
+     ≤4.5-block-away pillar up to 6 blocks tall, it instead yanks you
+     down and hits anyway. No more 3-tall-tower cheese.
+  2. **Ground slam AOE** — 1s telegraphed particle wind-up, then a
+     `World.ExplosionSourceType.NONE` explosion (damages entities,
+     never breaks blocks, ignores `mobGriefing`).
+  3. **Ranged barrage** — 3 shulker bullets then 3 arrows, all aimed at
+     whoever last damaged the golem (falls back to current target).
+- **Phase 2 – Arena change** (triggers once at 60% HP): procedurally
+  clears a ring of blocks out to a 10-block radius and floors it with
+  iron blocks, "expanding" the arena. Also unlocks a new **charge smash**
+  attack (see assumption below). All Phase 1 attacks continue.
+- **Phase 3 – Dying** (triggers at 15% HP): golem stops, becomes
+  invulnerable, and for 5 seconds (100 ticks) plays particles/sound
+  cues. At the end it does one `ExplosionSourceType.NONE` explosion
+  (damages nearby players, doesn't touch terrain) and dies for real,
+  triggering normal loot drops.
+
+Health, phase thresholds, damage numbers, and the new Phase 2 attack are
+my calls where you didn't specify — all clearly marked/tunable as
+constants at the top of `TrueIronGolemEntity` and each goal class.
+
+## Boss 2: The Hollow Warden (140 hearts / 280 HP — assumption)
+
+A blind, vibration-sensing horror. Its target selector uses
+`checkVisibility = false`, so it finds players without needing line of
+sight — hiding behind thin cover doesn't work.
+
+- **Phase 0 – Dormant**: buried/still, same wake-on-proximity-or-hit
+  pattern as boss 1.
+- **Phase 1 – Awakened**:
+  - **Wide melee swipe** — hits every living entity in a 2.5-block
+    radius around it, not just the current target, so grouping up in
+    melee range doesn't dilute damage.
+  - **Sonic pulse beam** — 1.25s telegraph (a particle line traces
+    toward you), then a beam that damages and applies Darkness to
+    everything within 1.5 blocks of that line, out to 16 blocks.
+- **Phase 2 – Consuming** (triggers at 50% HP, assumption): every ~10s
+  it anchors for 5 seconds and opens a vortex — every living entity
+  within 14 blocks gets pulled toward it every tick, while it fires
+  arrows and thrown Potions of Harming at its target every 0.75s. Phase
+  1 attacks stay active throughout.
+- **Phase 3 – Collapsing** (15% HP): same 5s scripted death → block-safe
+  explosion pattern as boss 1, sculk-themed sounds/particles, for
+  consistency across bosses.
+
+## Boss 3: End Familiar (15 HP, spawns with the Ender Dragon)
+
+No boss bar / phase system on this one — it's a fragile swarm-add, not a
+solo arena boss.
+
+- **Spawns with the dragon**: `EndFamiliarSpawner` listens for the dragon
+  loading into the world and spawns 2 familiars nearby if none already
+  exist close by. See the caveat in that file about exactly when this
+  can re-trigger, and how to swap in a Mixin for an exact one-shot hook.
+- **Dodges projectiles**: `FamiliarDodgeGoal` scans a 14-block radius for
+  any `ProjectileEntity` on a trajectory that would pass within 2 blocks
+  of it, then short-teleports perpendicular to the incoming shot.
+- **Regenerates**: +0.5 HP/sec while below max health (assumption on
+  "moderate" — `REGEN_PER_SECOND` in `EndFamiliarEntity`).
+- **Grows over time**: every random 30–60s, permanently +1 max HP
+  (engine unit = half a heart; bump `GROWTH_AMOUNT` to 2.0 if you meant
+  a full heart) and heals to match. Left alive too long, it snowballs.
+- **On death**: spawns 3 Shulkers around itself, then a real TNT-power
+  explosion (normal block destruction) plus a follow-up pass that
+  specifically clears any obsidian in range too, since obsidian's blast
+  resistance (1200) makes it immune to every vanilla explosion otherwise.
+- **Bonus**: periodically grants the Ender Dragon Regeneration II if it's
+  within 50 blocks — a concrete version of "helps him."
+
+## Boss 4: The Shulker Sovereign (130 hearts / 260 HP — assumption)
+
+A stationary End City ship guardian. Doesn't chase — you come to it.
+
+- **Shield loop**: every 15s, `ShieldSummonGoal` spawns 3 armor-stand
+  "Shield Anchors" (1 HP each — dies to any hit, like a normal armor
+  stand) in a ring 3.5 blocks out. While any are alive, `damage()`
+  returns `false` — full invulnerability, with a clang sound and spark
+  particles as feedback. Anchors aren't cleared automatically between
+  summons, so leaving them up too long stacks them (capped at 9).
+- **Void Bolt**: independent timer, ~1.25s telegraph (particles gather
+  at the boss), then a visible bolt flies in a straight line to the
+  target's position at launch time over ~1s (not re-homing, so moving
+  after it fires is how you dodge it), hitting for 22 flat damage in a
+  small radius on impact — no status effect, just a big hit, as
+  requested. This runs whether the shield is up or down, so you can't
+  just facetank the anchors safely.
+- **Design note**: I implemented the bolt as a telegraphed particle
+  effect with its own straight-line flight rather than subclassing
+  vanilla `ShulkerBulletEntity`, because that class's convenience
+  constructor hardcodes the vanilla entity type internally — a subclass
+  calling it risks a mismatch between the registered entity type and
+  the actual Java class that I can't verify without compiling against
+  the real game jar. This way sidesteps that risk entirely while still
+  giving the same dodgeable-heavy-hitter feel.
+
+## Boss 5: The Bastion Warlord (200 hearts / 400 HP — assumption)
+
+A mobile piglin brute guarding a Nether bastion — deliberately built to
+feel nothing like the other four. No sleeping phase, no shield loop, no
+evasive dodging: it's aggressive from the moment it spawns and just gets
+meaner.
+
+- **Phase 1**: **Molten Slam** (melee chase-and-hit, ignites on contact
+  for 5s) + **Flame Wave** (~1s telegraph, then a fire cone locked to
+  wherever the target was when the telegraph started — damages, ignites,
+  and knocks back everything caught in the cone).
+- **Phase 2** (≤55% HP): unlocks **Reinforcements** — summons 2 real
+  vanilla Piglin Brutes at a time (capped at 4 alive) that actually
+  fight, not decorative adds — and **Meteor Shower**, which telegraphs 3
+  lava-impact points near the target, each detonating in a small fire
+  AOE. If `mobGriefing` is on, impacts also set their block to fire —
+  always scheduled for auto-revert to air after 4s via
+  `scheduleFireRevert`, so nothing burns forever even on netherrack.
+- **Phase 3 "Enraged"** (≤20% HP): a permanent Strength buff and every
+  attack's cooldown shrinks. No new gimmick — just sustained pressure
+  for the finale.
+- Death has no scripted countdown this time either, for variety — just
+  a lava/fire particle burst and an explosion sound on the kill.
+
+## Debug tools: /bossrush command
+
+All debug functionality lives under `com.bossrush.command.BossRushCommand`
+and requires permission level 2 (same as most admin commands).
+
+```
+/bossrush debug mode <true|false>
+/bossrush debug attack <boss> <attack> <target>
+/bossrush debug list <boss>
+```
+
+`mode` and `list` always work; `attack` requires debug mode to be on
+first. Boss ids: `ttig`, `warden`, `familiar`, `sovereign`, `warlord`.
+The command finds the nearest matching boss within 100 blocks of you, so
+summon one first. Example:
+
+```
+/bossrush debug mode true
+/bossrush debug attack ttig projectile Steve
+```
+produces the chat feedback:
+```
+[TTIG] uses Projectile Attack (target: Steve)
+```
+
+**Currently wired up**: only TTIG's ranged barrage (id `projectile`) —
+see `GolemRangedBarrageGoal#debugForceFire`. It fires the full 3-shulker
++ 3-arrow volley instantly, bypassing cooldown and the normal stagger
+delay between shots.
+
+**Adding more attacks**: every boss now extends `AbstractBossEntity`,
+which provides `registerDebugAttack(id, displayName, Consumer<LivingEntity>)`.
+The pattern is: add a public `debugForceX(LivingEntity target)` method
+to the relevant Goal class that runs its attack logic directly (skip
+cooldowns/telegraphs for instant testing), keep a reference to that goal
+instance in the boss's `initGoals()` instead of an anonymous `new`, then
+call `registerDebugAttack("id", "Display Name", goalInstance::debugForceX)`
+at the end of `initGoals()`. `/bossrush debug list <boss>` will pick up
+newly registered attacks automatically since it just reads the map.
+
+## Loot: progression items + vanilla unbreakable diamond gear
+
+Every boss now drops a **guaranteed trophy item** (`golem_core`,
+`warden_core`, `familiar_core`, `sovereign_core`, `warlord_core` — see
+`ModItems`) via a real Minecraft loot table, so it's easy to reference
+from your own datapack recipes or advancements no matter what
+progression system you end up using.
+
+### What I found researching Apotheosis/Zenith specifically
+
+Progression there is gated by **World Tiers** (Haven → Frontier → Ascent
+→ Summit → Pinnacle), unlocked by owning full gear sets of increasing
+rarity *plus* two specific vanilla milestones: Summit needs the **Wither**
+dead, Pinnacle needs the **Ender Dragon** dead. That's hardcoded to those
+two vanilla bosses, not a generic "any boss counts" hook, and Zenith is
+an unofficial, community-maintained port — I don't have its actual
+source or internal item/tag IDs in front of me, so I didn't want to
+guess at Java classes or config keys that might not compile or might
+silently do nothing. Also worth knowing: vanilla's advancement-based
+recipe unlocking only affects recipe-book visibility, not actual
+crafting enforcement — a real "can't craft until you kill the boss" gate
+has to come from Apotheosis/Zenith's own systems. If you can grab
+Zenith's actual config/source (e.g. from github.com/Safrodev/Zenith) and
+point me at the relevant tier/recipe files, I can write precise
+integration instead of guessing.
+
+### Backup plan: vanilla unbreakable diamond gear (no mods needed)
+
+This works with zero dependencies — `Unbreakable:1b` is a stock vanilla
+NBT tag that's existed since 1.8, applied via a loot table's
+`minecraft:set_nbt` function. Current drops:
+
+- **True Iron Golem**: guaranteed full unbreakable diamond armor set +
+  unbreakable diamond sword + pickaxe, plus its core.
+- **Hollow Warden**: guaranteed full unbreakable diamond armor set +
+  unbreakable diamond axe, plus its core.
+- **Shulker Sovereign**: guaranteed full unbreakable diamond armor set +
+  unbreakable diamond sword + unbreakable shield (thematically fitting,
+  given its whole mechanic is about shields), plus its core.
+- **Bastion Warlord**: guaranteed full unbreakable diamond armor set +
+  unbreakable diamond axe, plus its core.
+- **End Familiar**: only its core is guaranteed. I deliberately did
+  *not* give this one guaranteed diamond gear — it's a fragile 15 HP
+  add that respawns in pairs every dragon fight, so a guaranteed full
+  set would basically be an infinite diamond-gear farm. Instead it has
+  a 20% chance per kill at *one* random unbreakable diamond piece. Bump
+  `chance` in `end_familiar.json` if you want it more (or less) generous.
+
+Edit the `data/bossrush/loot_tables/entities/*.json` files directly to
+retune any of this — add enchantments via another `set_nbt` tag (e.g.
+`{Unbreakable:1b,Enchantments:[{id:"minecraft:mending",lvl:1}]}`),
+change drop chances, or remove pools entirely.
+
+## Structures
+
+You asked for each boss to have "their own structures." Two options,
+both supported by the code:
+
+- **What's built now**: the Phase-2 "arena expansion" is done procedurally
+  in code (`expandArena()` in `TrueIronGolemEntity`) — no structure file
+  needed, works immediately.
+- **For an actual arena/temple structure** (recommended for the boss's
+  starting room): build it in-game with structure blocks, save it as
+  `data/bossrush/structures/true_iron_golem_arena.nbt`, then paste it on
+  spawn using `world.getStructureManager()` — happy to wire that in once
+  you've built the structure, or I can generate a simple placeholder
+  arena shape procedurally too if you'd rather skip hand-building one.
+
+## Summoning
+
+```
+/summon bossrush:true_iron_golem ~ ~ ~
+/summon bossrush:hollow_warden ~ ~ ~
+/summon bossrush:end_familiar ~ ~ ~
+/summon bossrush:shulker_sovereign ~ ~ ~
+/summon bossrush:bastion_warlord ~ ~ ~
+```
+
+The golem and warden spawn dormant/asleep; get within range (8 blocks
+for the golem, 10 for the warden) or land a hit to wake them. The
+familiar is active immediately and normally spawns automatically when
+you enter the dragon fight (see above). The Sovereign is stationary and
+active immediately — summon it on the actual ship structure in an End
+City, since it never chases you off of it. The Warlord is also active
+immediately and will chase — good practice is summoning it inside/near
+an actual bastion for the intended vibe.
+
+## Placeholder visuals
+
+None of the five bosses have custom art yet — each currently borrows a
+vanilla model/texture as a stand-in (iron golem ×2, husk, skeleton,
+piglin). All are drop-in swappable once you have real models; see the
+comments in each `client/*Renderer.java` for why certain vanilla models
+(Warden, Vex, Shulker) couldn't be reused directly.
+
+## Building via GitHub Actions (no PC needed)
+
+A workflow file (`.github/workflows/build.yml`) is included that
+automatically compiles the mod on every push and gives you a
+downloadable jar — no local Java/Gradle setup required, works entirely
+from a phone browser or the GitHub app.
+
+**Important**: this repo needs the actual Fabric Gradle wrapper files
+to build (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`,
+`gradle/wrapper/gradle-wrapper.properties`). Those are binary/generated
+files I can't produce without internet access, so if you haven't merged
+this project into the real Fabric template yet (see Setup above), the
+build will fail with "gradlew: No such file or directory". Get them
+from https://fabricmc.net/develop/template/ — generate a template,
+and copy just those 4 items into this repo's root (they belong in
+`<repo root>/gradlew`, `<repo root>/gradlew.bat`, and
+`<repo root>/gradle/wrapper/`).
+
+**Steps:**
+1. Get the Gradle wrapper files into the repo (see above) if not already there.
+2. Upload/push everything to your GitHub repo (GitHub mobile app → your
+   repo → "Add file" → "Upload files" works fine for this, or use
+   `git push` from any machine you do have access to).
+3. Go to your repo's **Actions** tab on GitHub (web or app) — a build
+   should already be running from the push, or click **Run workflow**
+   to trigger it manually.
+4. Wait for the green checkmark (first run downloads Minecraft +
+   mappings, so it can take 3-5 minutes; later runs are faster).
+5. Click into the finished run → scroll to **Artifacts** →
+   `bossrush-mod-jar` → download. That's your compiled mod jar, ready
+   to drop into a `mods/` folder.
+6. If the build fails (red X), click into the run to see the error log
+   — copy/paste it to me and I'll fix whatever's wrong.
+
+## Next steps
+
+The 5-boss roster is complete. Natural next steps if you want to keep
+going:
+- Custom textures/models instead of the reused vanilla looks
+- Different phase health thresholds, damage numbers, or timers
+- The real NBT arena structures wired in once you've built them in-game
+- A Mixin-based exact spawn trigger for the End Familiar instead of the
+  event-based approach
+- Tighter Apotheosis/Zenith integration if you get their config/source
+- Wiring up debug attacks for the other 4 bosses (see the Debug tools
+  section above for the pattern)
