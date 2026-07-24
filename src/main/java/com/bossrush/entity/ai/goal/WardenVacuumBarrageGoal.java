@@ -31,10 +31,10 @@ public class WardenVacuumBarrageGoal extends Goal {
     private int activeTicks = -1;
     private int shotTimer;
     private int shotIndex;
-    private static final int DURATION = 100; // 5s
-    private static final double PULL_RADIUS = 14.0;
-    private static final double PULL_STRENGTH = 0.14;
-    private static final double MIN_PULL_DIST = 2.5;
+    private static final int DURATION = 400; // 5s
+    private static final double PULL_RADIUS = 40.0;
+    private static final double PULL_STRENGTH = 0.17;
+    private static final double MIN_PULL_DIST = 1.5;
 
     public WardenVacuumBarrageGoal(HollowWardenEntity warden) {
         this.warden = warden;
@@ -85,7 +85,7 @@ public class WardenVacuumBarrageGoal extends Goal {
         shotTimer--;
         if (shotTimer <= 0 && target != null && target.isAlive()) {
             fireAtTarget(target);
-            shotTimer = 15; // shot every 0.75s while the vortex is open
+            shotTimer = 1; // shot every 0.75s while the vortex is open
         }
 
         activeTicks++;
