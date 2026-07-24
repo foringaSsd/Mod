@@ -18,8 +18,8 @@ import net.minecraft.sound.SoundEvents;
 public class WarlordReinforcementsGoal extends Goal {
     private final BastionWarlordEntity warlord;
     private int cooldown = 200; // 10s before the first possible call
-    private static final int MAX_ALLIES = 4;
-    private static final int SUMMON_COUNT = 2;
+    private static final int MAX_ALLIES = 20;
+    private static final int SUMMON_COUNT = 1;
 
     public WarlordReinforcementsGoal(BastionWarlordEntity warlord) {
         this.warlord = warlord;
